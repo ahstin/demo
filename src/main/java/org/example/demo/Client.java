@@ -10,6 +10,7 @@ import org.example.demo.utils.TCPSendUtil;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
+import java.awt.peer.RobotPeer;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 
@@ -21,9 +22,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.lang.reflect.Method;
 
+import sun.awt.ComponentFactory;
 
-import static org.example.demo.ui.Home.controlWindow;
+//import static org.example.demo.Main.loginController;
 
 public class Client {
 
@@ -45,17 +48,21 @@ public class Client {
     public static int age = 24;
     public static String signature = "摆烂";
 
+    public static GraphicsDevice screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+    public static Toolkit toolkit = Toolkit.getDefaultToolkit();
+    public static RobotPeer robot = (toolkit instanceof ComponentFactory ? ((ComponentFactory)toolkit).createRobot(screen) : null);
+    public static Method method = robot.getClass().getDeclaredMethod("getRGBPixels",int.class,int.class,int.class,int.class,int[].class);
+    public static Dimension screenSize = toolkit.getScreenSize();
+    public static int Width = 2*screenSize.width;
+    public static int Height = 2*screenSize.height;
+    public static int[] rgbs = new int[Width*Height];
+    
     public static Socket client = null;
-    public static Socket RemoteControlClient = null;
-    public static Socket friendClient = null;
-    public static Socket CameraClient = null;
+    public static Socket secondClient = null;
 
-
-    private static Thread recieveImgThread;
-    private static Thread sendImgThread;
-    private static Thread robotThread;
-    private Thread friendResultThread;
-    private Thread friendThread;
+    private Thread recieveImgThread;
+    private Thread sendImgThread;
+    private Thread robotThread;
 
     public static Map<String, Stage> chatWindows = new HashMap<>();
 
@@ -64,13 +71,9 @@ public class Client {
         sendImgThread = new Thread(() -> {
             TCPSendUtil sendUtil = new TCPSendUtil(Client.client);
             while (true) {
-                Robot robot = null;
                 try {
-                    robot = new Robot();
-                    Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-                    Rectangle rec = new Rectangle(0, 0, screenSize.width, screenSize.height);
-                    BufferedImage bi = robot.createScreenCapture(rec);
-                    byte[] imageBytes = sendUtil.getImageBytes(bi);
+                    method.invoke(robot,0,0,Width,Height,rgbs);
+                    byte[] imageBytes = toByteArr(rgbs);
                     sendUtil.sendImg(imageBytes);
                 } catch (AWTException e) {
                     throw new RuntimeException(e);
@@ -90,7 +93,7 @@ public class Client {
                 ByteArrayInputStream bais = new ByteArrayInputStream(imageData);
                 try {
                     BufferedImage image = ImageIO.read(bais);
-                    controlWindow.updateImage(image);
+                    //loginController.updateImage(image);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -98,7 +101,7 @@ public class Client {
         });
 
         robotThread = new Thread(()->{
-            TCPReceiveUtil receiveUtil = new TCPReceiveUtil(Client.RemoteControlClient);
+            TCPReceiveUtil receiveUtil = new TCPReceiveUtil(Client.secondClient);
             try {
                 Robot robot = new Robot();
 
@@ -164,48 +167,26 @@ public class Client {
                 throw new RuntimeException(e);
             }
         });
-
-        friendThread = new Thread(()->{
-
-        });
-
-        friendResultThread = new Thread(()->{
-            TCPReceiveUtil receiveUtil = new TCPReceiveUtil(Client.friendClient);
-            while (true) {
-                String friendReply = receiveUtil.receiveUTF();
-                if (friendReply != null && friendReply.contains(":")) {
-                    String[] reply = friendReply.split(":");
-                    if (reply[1].equals("同意")) {
-                        Client.friendNumb++;
-                        Client.friendNames.add(reply[0]);
-                        // 弹出好友同意的窗口
-                    } else if (reply[1].equals("拒绝")) {
-                        // 弹出好友不同意的窗口
-                    }
-                }
-            }
-        });
     }
 
-    public static void startRemoteHash() {
+    public void startRemoteHash() {
         sendImgThread.start();
-    }
-
-    public static void recieveRemoteHash() {
         recieveImgThread.start();
     }
 
-    public static void startRemoteControl(){
+    public void startRemoteControl(){
         sendImgThread.start();
+        recieveImgThread.start();
         robotThread.start();
     }
 
-    public static void stopRemoteControl(){
+    public void stopRemoteControl(){
         sendImgThread.interrupt();
+        recieveImgThread.interrupt();
         robotThread.interrupt();
     }
 
-    public static void stopRemoteHash(){
+    public void stopRemoteHash(){
         sendImgThread.interrupt();
         recieveImgThread.interrupt();
     }
@@ -221,6 +202,16 @@ public class Client {
                 System.out.println("头像文件不存在: " + Client.avatarUrl);
             }
         }
+    }
+    public static byte[] toByteArr(int[] i) {
+        byte[] b = new byte[4*i.length];
+        for(int j=0;j<i.length;j++) {
+            b[4*j] = (byte) ((i[j] >>> 24) & 0xFF);
+            b[4*j+1] = (byte) ((i[j] >>> 16) & 0xFF);
+            b[4*j+2] = (byte) ((i[j] >>> 8) & 0xFF);
+            b[4*j+3] = (byte) (i[j] & 0xFF);
+        }
+        return b;
     }
 }
 
