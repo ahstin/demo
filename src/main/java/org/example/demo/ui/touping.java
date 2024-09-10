@@ -2,18 +2,60 @@ package org.example.demo.ui;
 
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.image.ImageView;
 import javafx.scene.control.*;
+import javafx.scene.image.PixelWriter;
+import javafx.scene.image.WritableImage;
 import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.Modality;
 import javafx.geometry.Pos;
 import javafx.scene.image.Image;
+import sun.awt.ComponentFactory;
+
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.peer.RobotPeer;
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class touping extends Application {
 
     private int seconds = 0; // 计时器的秒数
     private Label timerLabel = new Label("投屏时间: 0 秒");
+
+        public static Scene scene;
+    public static Color color;
+    public static WritableImage writableImage;
+    public static GraphicsDevice screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+    public static Toolkit toolkit = Toolkit.getDefaultToolkit();
+    public static int Width;
+    public static int Height;
+    public static ImageView imageView = new ImageView();
+    public static RobotPeer robot;
+    public static Method method;
+
+    static {
+        try {
+            robot = (toolkit instanceof ComponentFactory ? ((ComponentFactory) toolkit).createRobot(screen) : null);
+        } catch (AWTException e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            method = robot.getClass().getDeclaredMethod("getRGBPixels", int.class, int.class, int.class, int.class, int[].class);
+        } catch (NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     @Override
     public void start(Stage primaryStage) {
@@ -36,6 +78,7 @@ public class touping extends Application {
         Pane screenPane = new Pane();
         screenPane.setStyle("-fx-background-color: black; -fx-border-color: pink; -fx-border-width: 2;");
         screenPane.setPrefSize(600, 500); // 设置投屏区域大小，增加高度
+        screenPane.getChildren().add(imageView);
 
         // 菜单栏，包含计时器和取消按钮
         HBox menuBar = new HBox(20);
@@ -75,7 +118,12 @@ public class touping extends Application {
         mainLayout.setCenter(content); // 将投屏框放置在页面中央
         mainLayout.setBottom(bottomPane); // 底部背景放置在页面底部
 
-        Scene scene = new Scene(mainLayout, 800, 600); // 增大页面大小
+        scene = new Scene(mainLayout, 800, 600); // 增大页面大小
+        imageView.setFitWidth(Width/4);
+        imageView.setFitHeight(Height/4);
+        imageView.fitWidthProperty().bind(scene.widthProperty());
+        imageView.fitHeightProperty().bind(scene.heightProperty());
+        imageView.setPreserveRatio(true);
         primaryStage.setTitle("投屏窗口");
         primaryStage.setScene(scene);
         primaryStage.show();
@@ -111,6 +159,30 @@ public class touping extends Application {
     }
 
     public static void main(String[] args) {
+        Width = 2 * (int) toolkit.getScreenSize().getWidth();
+        Height = 2 * (int) toolkit.getScreenSize().getHeight();
+        writableImage = new WritableImage(Width, Height);
+        int[] rgbs=new int[Width*Height];
+        imageView.setImage(writableImage);
+        //调用本地方法获取像素
+        method.setAccessible(true);
+        //抓屏
+        PixelWriter pixelWriter = writableImage.getPixelWriter();
+        ScheduledThreadPoolExecutor scheduledThreadPoolExecutor=new ScheduledThreadPoolExecutor(1);
+        scheduledThreadPoolExecutor.scheduleAtFixedRate(()->{
+            try {
+                method.invoke(robot, 0, 0, Width, Height, rgbs);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+            for (int readY = 0; readY < Height; readY++) {
+                for (int readX = 0; readX < Width; readX++) {
+                    color = Color.web("#" + Integer.toHexString(rgbs[readY * Width + readX]).substring(2));
+                    pixelWriter.setColor(readX, readY, color);
+                }
+            }
+        },10,80, TimeUnit.MILLISECONDS);
+
         launch(args);
     }
 }
